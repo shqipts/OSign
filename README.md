@@ -1,36 +1,43 @@
 # OSign
 
-Personal iOS IPA-signing app based on [Feather](https://github.com/claration/feather), preserving GPL-3.0 and original contributor attribution. Upstream foundation: `31ab6de455f2a6108f6830e343dee826310c03be`.
+**Sign, manage and install your iOS apps from your iPhone.**
 
-## Current version
+OSign brings IPA imports, signing certificates, provisioning profiles and signed app exports together in one app. Signing happens on your device, with a dark interface and clear progress and error messages.
 
-Build 7: on-device signing, certificate/profile management, signed IPA export, explicit installation handoff and visible errors. Custom Osmonaj artwork, black launch screen and no GitHub-star prompt. The owner reports this build works on their phone; that is user-reported rather than an independently observed device test.
+## What you can do
 
-Semi Local delivery keeps the IPA on the iPhone at `127.0.0.1`; a protected public HTTPS service supplies only a short-lived manifest. No IPA/P12/private signing-key upload is performed by this flow. Standard TLS and iOS provisioning restrictions apply. See [PUBLIC-IP.md](PUBLIC-IP.md) for current architecture and deployment details. Historical designs are labeled separately.
+- **Import IPA files** and view app information.
+- **Manage certificates and profiles** used to sign your apps.
+- **Sign on your iPhone** using the native signing engine.
+- **Install signed apps** through an explicit iOS installation handoff.
+- **Export signed IPAs** to Files or another installer.
 
-## Build
+## How it works
 
-Use macOS with `/Applications/Xcode.app`; select it using process-scoped `DEVELOPER_DIR`, not global settings.
+1. Import an IPA and add your signing certificate and provisioning profile.
+2. Select your signing options and sign the app locally.
+3. Choose **Install** or **Export**.
 
-```bash
-bash Scripts/bootstrap-source.sh
-DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild \
-  -workspace Feather.xcworkspace -scheme Feather -configuration Release \
-  -destination 'generic/platform=iOS' -derivedDataPath .build/DerivedData \
-  -clonedSourcePackagesDirPath .build/SourcePackages \
-  CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO DEVELOPMENT_TEAM= \
-  DEPLOYMENT_LOCATION=NO CURRENT_PROJECT_VERSION=7
-python3 Scripts/package-osign.py --build 7
-```
+For installation, OSign uses **Semi Local delivery**: a temporary server on your iPhone serves the signed IPA only at `127.0.0.1`. A protected HTTPS service creates a small, short-lived installation manifest pointing to that local file. iOS receives the manifest and requests the IPA from your phone.
 
-Bootstrap restores pinned OpenSSL and applies the retained Zsign patch. The authenticated manifest configuration is deliberately **not committed**. Bootstrap can restore it from the owner's local `~/.config/osign-relay/public-manifest-token`; another machine needs its own authorized configuration. Do not put this token in source control.
+**The IPA, signing certificate, private key and password are not uploaded by this installation flow.** Only the app name, bundle identifier, version and local delivery URL are sent to the manifest service. A normal internet connection is enough—Tailscale and device pairing are not required.
 
-Minimum deployment target: iOS 16.0. The unsigned release must be signed with a valid certificate/profile before installation. Preserve bundle ID `local.osign.app` and update in place to retain app data; use another working installer to update OSign itself.
+The HTTPS service uses a trusted certificate with automatic renewal. Standard iOS signing, provisioning and installation restrictions still apply; accepting the system handoff is not confirmation that installation finished. Export remains available as a fallback.
 
-## Privacy and releases
+## Download
 
-This is a private repository. Build caches, signing credentials, pairing records and manifest tokens are excluded from source control. The personalized unsigned release contains the owner's manifest-service configuration and must remain private. GitHub Actions are disabled to avoid running inherited release workflows unintentionally.
+Get **OSign-unsigned.ipa** from the [OSign release](https://github.com/shqipts/OSign/releases/latest).
 
-## License
+- Requires **iOS 16.0 or later**.
+- The IPA is **unsigned**: sign it with a valid certificate and provisioning profile before installing.
+- Update your existing OSign installation without deleting it to preserve its data. Use another working installer to update OSign itself.
 
-GPL-3.0: see [LICENSE](LICENSE). Original Feather source headers and bundled legal notices remain. OSign modifications and corresponding build/deployment scripts are included here. Dependency licenses remain with their respective projects; no proprietary ESign assets are included.
+This repository and its personalized release are private. Do not redistribute the release's authenticated manifest-service configuration.
+
+## Development
+
+Source, native signing integration, regression tests and deployment scripts are included. See [technical documentation](https://github.com/shqipts/OSign/blob/main/PUBLIC-IP.md) and [build instructions](https://github.com/shqipts/OSign/blob/main/README-OSign.md). Restore pinned dependencies with `bash Scripts/bootstrap-source.sh`; private configuration is intentionally excluded from source control.
+
+## License & credits
+
+OSign is based on Feather by Samara and its contributors, with GPL-3.0 and original attribution preserved. See [LICENSE](https://github.com/shqipts/OSign/blob/main/LICENSE) and [upstream acknowledgements](https://github.com/shqipts/OSign/blob/main/UPSTREAM-NOTICES.md).
