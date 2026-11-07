@@ -1,0 +1,9 @@
+[Unit]
+Description=Renew OSign short-lived public IP TLS certificate
+After=network-online.target apache2.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/opt/osign-acme/bin/certbot renew --cert-name osign-public-ip --non-interactive --no-random-sleep-on-renew --config-dir /etc/letsencrypt-osign-ip --work-dir /var/lib/letsencrypt-osign-ip --logs-dir /var/log/letsencrypt-osign-ip --deploy-hook "/usr/sbin/apache2ctl configtest && /usr/bin/systemctl reload apache2"
+ExecStartPost=/usr/bin/openssl x509 -checkend 172800 -noout -in /etc/letsencrypt-osign-ip/live/osign-public-ip/fullchain.pem

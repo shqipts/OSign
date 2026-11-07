@@ -1,249 +1,135 @@
-//
-//  InstallPreview.swift
-//  Feather
-//
-//  Created by samara on 22.04.2025.
-//
-
+// OSign Semi Local installation. Based on Feather by Samara M; GPL-3.0.
 import SwiftUI
 import NimbleViews
 import IDeviceSwift
-import OSLog
 
-// MARK: - View
 struct InstallPreviewView: View {
-	@Environment(\.dismiss) var dismiss
+    var app: AppInfoPresentable
+    var isSharing: Bool
+    @StateObject private var viewModel = InstallerStatusViewModel(isIdevice:false)
+    @State private var package: URL?
+    @State private var server: ServerInstaller?
+    @State private var manifest: URL?
+    @State private var manifestExpires = Date.distantPast
+    @State private var showBrowser = false
+    @State private var message = "Preparing IPA on this iPhone…"
+    @State private var busy = true
+    @State private var started = false
+    @State private var backgroundTask = UIBackgroundTaskIdentifier.invalid
 
-	@AppStorage("Feather.useShareSheetForArchiving") private var _useShareSheet: Bool = false
-	@AppStorage("Feather.installationMethod") private var _installationMethod: Int = 0
-	@AppStorage("Feather.serverMethod") private var _serverMethod: Int = 0
-	@State private var _isWebviewPresenting = false
-	@State private var progressTask: Task<Void, Never>?
-	
-	var app: AppInfoPresentable
-	@StateObject var viewModel: InstallerStatusViewModel
-	@StateObject var installer: ServerInstaller
-	
-	@State var isSharing: Bool
-	
-	init(app: AppInfoPresentable, isSharing: Bool = false) {
-		self.app = app
-		self.isSharing = isSharing
-		let viewModel = InstallerStatusViewModel(isIdevice: UserDefaults.standard.integer(forKey: "Feather.installationMethod") == 1)
-		self._viewModel = StateObject(wrappedValue: viewModel)
-		self._installer = StateObject(wrappedValue: try! ServerInstaller(app: app, viewModel: viewModel))
-	}
-	
-	// MARK: Body
-	var body: some View {
-		let cornerRadius = {
-			if #available(iOS 26.0, *) {
-				28.0
-			} else {
-				10.5
-			}
-		}()
-		
-		ZStack {
-			InstallProgressView(app: app, viewModel: viewModel)
-			_status()
-			_button()
-		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
-		.background(Color(UIColor.secondarySystemBackground))
-		.cornerRadius(cornerRadius)
-		.padding()
-		.sheet(isPresented: $_isWebviewPresenting) {
-			SafariRepresentableView(url: installer.pageEndpoint).ignoresSafeArea()
-		}
-		.onReceive(viewModel.$status) { newStatus in
-			if _installationMethod == 0 {
-				if case .ready = newStatus {
-					if _serverMethod == 0 {
-						UIApplication.shared.open(URL(string: installer.iTunesLink)!)
-					} else if _serverMethod == 1 {
-						_isWebviewPresenting = true
-					}
-				}
-				
-				if case .sendingPayload = newStatus, _serverMethod == 1 {
-					_isWebviewPresenting = false
-				}
-				
-				if case .installing = newStatus {
-					if progressTask == nil {
-						progressTask = startInstallProgressPolling(
-							bundleID: app.identifier!,
-							viewModel: viewModel
-						)
-					}
-				}
-				
-				switch newStatus {
-				case .completed, .broken(_):
-					progressTask?.cancel()
-					progressTask = nil
-					#if !targetEnvironment(macCatalyst)
-					BackgroundAudioManager.shared.stop()
-					#endif
-				default:
-					break
-				}
-			}
-		}
-		.onAppear(perform: _install)
-		
-		#if !targetEnvironment(macCatalyst)
-		.onAppear {
-			BackgroundAudioManager.shared.start()
-		}
-		#endif
-		
-		.onDisappear {
-			progressTask?.cancel()
-			progressTask = nil
-			
-			#if !targetEnvironment(macCatalyst)
-			BackgroundAudioManager.shared.stop()
-			#endif
-		}
-	}
-	
-	@ViewBuilder
-	private func _status() -> some View {
-		Label(viewModel.statusLabel, systemImage: viewModel.statusImage)
-			.padding()
-			.labelStyle(.titleAndIcon)
-			.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomLeading)
-			.animation(.smooth, value: viewModel.statusImage)
-	}
-	
-	@ViewBuilder
-	private func _button() -> some View {
-		ZStack {
-			if viewModel.isCompleted {
-				Button {
-					UIApplication.openApp(with: app.identifier ?? "")
-				} label: {
-					NBButton("Open", systemImage: "", style: .text)
-				}
-				.padding()
-				.compatTransition()
-			}
-		}
-		.frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
-		.animation(.easeInOut(duration: 0.3), value: viewModel.isCompleted)
-	}
-	
-	private func _install() {
-		guard isSharing || app.identifier != Bundle.main.bundleIdentifier! || _installationMethod == 1 else {
-			UIAlertController.showAlertWithOk(
-				title: .localized("Install"),
-				message: .localized("You cannot update ‘%@‘ with itself, please use an alternative tool to update it.", arguments: Bundle.main.name)
-			)
-			return
-		}
-				
-		Task.detached {
-			do {
-				let handler = await ArchiveHandler(app: app, viewModel: viewModel)
-				try await handler.move()
-				
-				let packageUrl = try await handler.archive()
-				
-				if await !isSharing {
-					if await _installationMethod == 0 {
-						await MainActor.run {
-							installer.packageUrl = packageUrl
-							viewModel.status = .ready
-						}
-						
-						if case .installing = await viewModel.status {
-							let task = await startInstallProgressPolling(
-								bundleID: app.identifier!,
-								viewModel: viewModel
-							)
-
-							await MainActor.run {
-								progressTask = task
-							}
-						}
-					} else if await _installationMethod == 1 {
-						let handler = await InstallationProxy(viewModel: viewModel)
-						try await handler.install(at: packageUrl, suspend: app.identifier == Bundle.main.bundleIdentifier!)
-					}
-				} else {
-					let package = try await handler.moveToArchive(packageUrl, shouldOpen: !_useShareSheet)
-					
-					if await !_useShareSheet {
-						await MainActor.run {
-							dismiss()
-						}
-					} else {
-						if let package {
-							await MainActor.run {
-								dismiss()
-								UIActivityViewController.show(activityItems: [package])
-							}
-						}
-					}
-				}
-			} catch {
-				await progressTask?.cancel()
-				
-				await MainActor.run {
-					UIAlertController.showAlertWithOk(
-						title: .localized("Install"),
-						message: String(describing: error),
-						action: {
-							HeartbeatManager.shared.start(true)
-							dismiss()
-						}
-					)
-				}
-			}
-		}
-	}
-	
-	private func startInstallProgressPolling(
-		bundleID: String,
-		viewModel: InstallerStatusViewModel
-	) -> Task<Void, Never> {
-
-		Task.detached(priority: .background) {
-			var hasStarted = false
-
-			while !Task.isCancelled {
-				let rawProgress = await UIApplication.installProgress(for: bundleID) ?? 0.0
-
-				if rawProgress > 0 {
-					hasStarted = true
-				}
-
-				let progress = await hasStarted
-					? _normalizeInstallProgress(rawProgress)
-					: 0.0
-
-				Logger.misc.info("Install progress for \(bundleID): \(progress)")
-
-				await MainActor.run {
-					viewModel.installProgress = progress
-				}
-
-				if hasStarted && rawProgress == 0 {
-					await MainActor.run {
-						viewModel.installProgress = 1.0
-						viewModel.status = .completed(.success(()))
-					}
-					break
-				}
-
-				try? await Task.sleep(nanoseconds: 1_000_000) // 1 ms
-			}
-		}
-	}
-
-	private func _normalizeInstallProgress(_ rawProgress: Double) -> Double {
-		min(1.0, max(0.0, (rawProgress - 0.6) / 0.3))
-	}
+    init(app: AppInfoPresentable, isSharing: Bool=false) {
+        self.app=app; self.isSharing=isSharing
+    }
+    var body: some View {
+        ScrollView {
+            VStack(alignment:.leading,spacing:18) {
+                Label(isSharing ? "Export IPA" : "Semi Local installation",systemImage:"arrow.down.app.fill").font(.title2.bold())
+                Text(app.name ?? "Application").font(.headline)
+                if busy {
+                    ProgressView(value:viewModel.packageProgress)
+                    ProgressView().frame(maxWidth:.infinity)
+                }
+                Text(message).font(.callout).textSelection(.enabled)
+                if let package {
+                    if !isSharing {
+                        Label("Only localhost · 127.0.0.1",systemImage:"network").font(.headline)
+                        Text("The IPA stays on this iPhone. Only app name, bundle ID, version and a localhost URL are sent to your VPS to create the HTTPS manifest. A normal internet connection is enough; Tailscale is not required. LocalDevVPN and pairing are not used.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Button { Task { await install() } } label: {
+                            Label("Install signed IPA",systemImage:"arrow.down.app").frame(maxWidth:.infinity)
+                        }.buttonStyle(.borderedProminent).disabled(busy)
+                        if let manifest {
+                            Button("Open system prompt directly") { handoff(manifest) }.disabled(busy)
+                        }
+                        Text("Keep OSign open while iOS fetches the IPA from localhost. A prompt or completed transfer does not prove installation. iOS may reject this delivery route or the provisioning; any system error matters.")
+                            .font(.footnote).foregroundStyle(.secondary)
+                        Divider()
+                    }
+                    Button { UIActivityViewController.show(activityItems:[package]) } label: {
+                        Label("Export IPA",systemImage:"square.and.arrow.up").frame(maxWidth:.infinity)
+                    }.buttonStyle(.bordered)
+                }
+            }.padding(24)
+        }
+        .background(Color(white:0.035)).foregroundStyle(.white)
+        .tint(Color(red:0.20,green:0.95,blue:0.46))
+        .sheet(isPresented:$showBrowser) {
+            if let server { SafariRepresentableView(url:server.pageEndpoint).ignoresSafeArea() }
+        }
+        .onReceive(viewModel.$status) { status in
+            switch status {
+            case .sendingPayload: message="iOS is fetching the IPA directly from this iPhone's localhost server…"
+            case .installing:
+                message="Local delivery response sent. Check the system prompt and Home Screen; this is not installation confirmation."
+            case .broken(let error): message="Local delivery failed: \(error.localizedDescription)"; endBackgroundTime()
+            default: break
+            }
+        }
+        .task {
+            guard !started else { return }
+            started=true
+            await prepare()
+        }
+        .onDisappear { endBackgroundTime() }
+    }
+    @MainActor private func prepare() async {
+        guard InstallRequest.validMetadata(identifier:app.identifier,version:app.version,title:app.name) else {
+            message="This app is missing its bundle identifier, version or name. Re-import a valid IPA."
+            busy=false; return
+        }
+        do {
+            let handler=ArchiveHandler(app:app,viewModel:viewModel)
+            try await handler.move()
+            let result=try await handler.archive()
+            guard FileManager.default.fileExists(atPath:result.path) else { throw CocoaError(.fileNoSuchFile) }
+            package=result
+            message="IPA ready on this phone. Choose Install or Export."
+        } catch { message="IPA preparation failed: \(error.localizedDescription)" }
+        busy=false
+    }
+    @MainActor private func install() async {
+        guard !busy, let package else { return }
+        guard app.identifier != Bundle.main.bundleIdentifier else {
+            message="OSign cannot replace itself while serving its own IPA. Export it and use another installer for OSign updates."
+            return
+        }
+        busy=true
+        do {
+            if server == nil {
+                message="Starting the localhost-only server…"
+                let local=try ServerInstaller(app:app,viewModel:viewModel)
+                local.packageUrl=package
+                server=local
+            }
+            guard let server else { throw CocoaError(.fileReadUnknown) }
+            if manifest == nil || manifestExpires <= Date() {
+                message="Creating the small HTTPS manifest on your VPS. The IPA is NOT being uploaded…"
+                let url=try await InstallRelayClient().createManifest(identifier:app.identifier ?? "",version:app.version ?? "",title:app.name ?? "",payload:server.payloadEndpoint)
+                manifest=url
+                manifestExpires=Date().addingTimeInterval(8*60)
+                server.externalManifestURL=url
+            }
+            if backgroundTask == .invalid {
+                backgroundTask=UIApplication.shared.beginBackgroundTask(withName:"OSign local delivery") {
+                    Task { @MainActor in
+                        message="iOS background time expired. Return to OSign and retry while keeping it open."
+                        endBackgroundTime()
+                    }
+                }
+            }
+            message="Opening the Semi Local installation page. Accept the iOS prompt."
+            showBrowser=true
+        } catch { message="Install preparation failed: \(InstallRelayClient.explanation(error))" }
+        busy=false
+    }
+    @MainActor private func handoff(_ manifest: URL) {
+        UIApplication.shared.open(InstallRequest.handoffURL(manifest),options:[:]) { accepted in
+            message=InstallRequest.handoffMessage(accepted:accepted)
+        }
+    }
+    private func endBackgroundTime() {
+        guard backgroundTask != .invalid else { return }
+        UIApplication.shared.endBackgroundTask(backgroundTask)
+        backgroundTask = .invalid
+    }
 }

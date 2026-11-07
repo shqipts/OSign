@@ -1,0 +1,132 @@
+diff --git a/Package.swift b/Package.swift
+index 4ee5e47..ac81ebb 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -20,8 +20,7 @@ let package = Package(
+ 	targets: [
+ 		.binaryTarget(
+ 			name: "IDevice",
+-			url: "https://github.com/jkcoxson/idevice/releases/download/v0.1.57/IDevice.xcframework.zip",
+-			checksum: "40cd5c769b60d1879a96c9caa27666037f9d5321844addec40ae99727b142d10"
++			path: "../Vendor/OSignIDevice.xcframework"
+ 		),
+ 		.target(
+ 			name: "IDeviceSwift",
+diff --git a/Sources/IDeviceSwift/Heartbeat/Heartbeat+start.swift b/Sources/IDeviceSwift/Heartbeat/Heartbeat+start.swift
+index b5c21f4..c2ae6a7 100644
+--- a/Sources/IDeviceSwift/Heartbeat/Heartbeat+start.swift
++++ b/Sources/IDeviceSwift/Heartbeat/Heartbeat+start.swift
+@@ -145,18 +145,20 @@ extension HeartbeatManager {
+ 	// MARK: - RSD Tunnel
+ 
+ 	internal func ensureRSDTunnel() -> Bool {
+-		guard !isRestartInProgress else {
+-			return true
+-		}
+-		
+-		isRestartInProgress = true
+-		restartLock.lock()
+-		defer { restartLock.unlock() }
+-		
+-		guard let pairingFile = getPairingRsd() else {
+-			Logger.heartbeat.error("RSD pairing file not found")
+-			return false
+-		}
++        restartLock.lock()
++        defer { restartLock.unlock() }
++        guard !isRestartInProgress else {
++            lastTunnelError = "Another local connection attempt is still running. Wait and retry."
++            return false
++        }
++        isRestartInProgress = true
++        lastTunnelError = nil
++        defer { isRestartInProgress = false }
++        guard let pairingFile = getPairingRsd() else {
++            lastTunnelError = "The remote-pairing record is missing or unreadable. Import a fresh RPPairing record, not a USB lockdown record."
++            return false
++        }
++        defer { rp_pairing_file_free(pairingFile) }
+ 		
+ 		var addr = sockaddr_in()
+ 		memset(&addr, 0, MemoryLayout.size(ofValue: addr))
+@@ -164,6 +166,7 @@ extension HeartbeatManager {
+ 		addr.sin_port = CFSwapInt16HostToBig(port_rsd)
+ 		
+ 		guard inet_pton(AF_INET, ipAddress, &addr.sin_addr) == 1 else {
++            lastTunnelError = "Invalid local device IPv4 address: \(ipAddress)"
+ 			Logger.heartbeat.error("Invalid IP address")
+ 			return false
+ 		}
+@@ -190,6 +193,7 @@ extension HeartbeatManager {
+ 				
+ 		if let err = result {
+ 			let error = IDeviceSwiftError(err)
++            lastTunnelError = "Remote pairing at \(ipAddress):\(port_rsd) failed: \(error.localizedDescription). Check LocalDevVPN's device IP and discover the current remote-pairing port."
+ 			Logger.heartbeat.error("\(error): \(err.pointee.code)")
+ 			return false
+ 		}
+@@ -204,10 +208,6 @@ extension HeartbeatManager {
+ 		adapter = newAdapter
+ 		handshake = newHandshake
+ 		
+-		rp_pairing_file_free(pairingFile)
+-		
+-		isRestartInProgress = false
+-		
+ 		return true
+ 	}
+ 
+diff --git a/Sources/IDeviceSwift/Heartbeat/Heartbeat.swift b/Sources/IDeviceSwift/Heartbeat/Heartbeat.swift
+index 5b03485..3891d1b 100644
+--- a/Sources/IDeviceSwift/Heartbeat/Heartbeat.swift
++++ b/Sources/IDeviceSwift/Heartbeat/Heartbeat.swift
+@@ -28,9 +28,20 @@ public class HeartbeatManager {
+ 	public var heartbeatThread: Thread?
+ 	
+ 	public var sessionId: UInt32? = nil
+-	public let ipAddress: String = "10.7.0.1"
++	public var ipAddress: String { UserDefaults.standard.string(forKey: "OSign.localPairingAddress") ?? "10.7.0.1" }
++    public var lastTunnelError: String?
+ 	public let port: UInt16 = UInt16(LOCKDOWN_PORT)
+-	public let port_rsd: UInt16 = UInt16(49152)
++	public var port_rsd: UInt16 {
++        let configured = UserDefaults.standard.integer(forKey: "OSign.localPairingPort")
++        return (configured > 0 && configured <= 65535) ? UInt16(configured) : 49152
++    }
++    public func testLocalConnection() async throws {
++        try await Task.detached(priority: .userInitiated) {
++            guard self.ensureRSDTunnel() else {
++                throw IDeviceSwiftError(message: self.lastTunnelError ?? "Remote pairing connection failed")
++            }
++        }.value
++    }
+ 	
+ 	public let restartLock = NSLock()
+ 	public var isRestartInProgress = false
+diff --git a/Sources/IDeviceSwift/IDeviceSwiftError.swift b/Sources/IDeviceSwift/IDeviceSwiftError.swift
+index 6a8daad..3333907 100644
+--- a/Sources/IDeviceSwift/IDeviceSwiftError.swift
++++ b/Sources/IDeviceSwift/IDeviceSwiftError.swift
+@@ -8,7 +8,8 @@
+ import Foundation
+ import IDevice
+ 
+-struct IDeviceSwiftError: Error {
++struct IDeviceSwiftError: LocalizedError {
++    var errorDescription: String? { "\(_message.isEmpty ? "Device service error" : _message) (code \(_code))" }
+ 	private let _message: String
+ 	private let _code: Int32
+ 	
+diff --git a/Sources/IDeviceSwift/InstallationProxy/InstallationProxy.swift b/Sources/IDeviceSwift/InstallationProxy/InstallationProxy.swift
+index 62ad145..a25b3d2 100644
+--- a/Sources/IDeviceSwift/InstallationProxy/InstallationProxy.swift
++++ b/Sources/IDeviceSwift/InstallationProxy/InstallationProxy.swift
+@@ -37,7 +37,7 @@ public class InstallationProxy: Identifiable, ObservableObject {
+ 			
+ 			if await self._heartbeat.isRsd {
+ 				guard await self._heartbeat.ensureRSDTunnel() else {
+-					throw IDeviceSwiftError(message: "Missing Pairing")
++					throw IDeviceSwiftError(message: self._heartbeat.lastTunnelError ?? "Remote-pairing tunnel failed")
+ 				}
+ 			} else {
+ 				guard await self._heartbeat.checkSocketConnection().isConnected else {

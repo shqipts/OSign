@@ -50,7 +50,7 @@ struct FeatherApp: App {
 	}
 	
 	private func _handleURL(_ url: URL) {
-		if url.scheme == "feather" {
+		if url.scheme == "osign" || url.scheme == "feather" {
 			/// feather://import-certificate?p12=<base64>&mobileprovision=<base64>&password=<base64>
 			if url.host == "import-certificate" {
 				guard
@@ -156,6 +156,7 @@ class AppDelegate: NSObject, UIApplicationDelegate {
 		_ application: UIApplication,
 		didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil
 	) -> Bool {
+		UserDefaults.standard.register(defaults: ["Feather.userInterfaceStyle": 2, "Feather.userTintColor": "#33F276"])
 		_createPipeline()
 		_createDocumentsDirectories()
 		ResetView.clearWorkCache()

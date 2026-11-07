@@ -1,7 +1,7 @@
 {
   "images" : [
     {
-      "filename" : "feather.png",
+      "filename" : "osign.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -13,7 +13,7 @@
           "value" : "dark"
         }
       ],
-      "filename" : "feather_dark.png",
+      "filename" : "osign_dark.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"
@@ -25,7 +25,7 @@
           "value" : "tinted"
         }
       ],
-      "filename" : "feather_tint.png",
+      "filename" : "osign_tint.png",
       "idiom" : "universal",
       "platform" : "ios",
       "size" : "1024x1024"

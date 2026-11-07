@@ -1,0 +1,13 @@
+diff --git a/Package.swift b/Package.swift
+index 05e1bfd..d0a64dc 100644
+--- a/Package.swift
++++ b/Package.swift
+@@ -23,7 +23,7 @@ let package = Package(
+ 		),
+ 	],
+ 	dependencies: [
+-		.package(url: "https://github.com/krzyzanowskim/OpenSSL", from: "3.3.3001")
++		.package(path: "../Vendor/OpenSSL")
+ 	],
+ 	targets: [
+ 		.target(

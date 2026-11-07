@@ -1,0 +1,29 @@
+[Unit]
+Description=OSign public metadata-only manifest service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=osign-public
+Group=osign-public
+WorkingDirectory=/opt/osign-relay
+Environment=OSIGN_RELAY_STATE=/var/lib/osign-public
+Environment=OSIGN_RELAY_TOKEN_FILE=/etc/osign-public/token
+Environment=OSIGN_RELAY_PUBLIC_BASE=https://87.106.127.145/osign
+Environment=OSIGN_RELAY_MANIFEST_ONLY=1
+Environment=OSIGN_RELAY_PORT=8082
+ExecStart=/opt/osign-relay/.venv/bin/python /opt/osign-relay/relay.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/osign-public
+MemoryMax=192M
+TasksMax=32
+
+[Install]
+WantedBy=multi-user.target

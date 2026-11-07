@@ -189,7 +189,7 @@ struct LibraryView: View {
 			}
 			.sheet(item: $_selectedInstallAppPresenting) { app in
 				InstallPreviewView(app: app.base, isSharing: app.archive)
-					.presentationDetents([.height(200)])
+					.presentationDetents([.large])
 					.presentationDragIndicator(.visible)
 			}
 			.fullScreenCover(item: $_selectedSigningAppPresenting) { app in

@@ -35,7 +35,7 @@ struct AboutView: View {
 				VStack {
 					FRAppIconView(size: 72)
 					
-					Text(Bundle.main.exec)
+					Text("OSign")
 						.font(.largeTitle)
 						.bold()
 						.foregroundStyle(Color.accentColor)
@@ -51,6 +51,10 @@ struct AboutView: View {
 			.frame(maxWidth: .infinity)
 			.listRowBackground(EmptyView())
 			
+			Section("OSign • unofficial Feather fork") {
+                Text("Modified 2026. Feather by Samara M and contributors. Licensed under GNU GPL version 3; no warranty. This is not ESign and is not endorsed by Feather's authors.")
+                Text("Corresponding modified source and build instructions are supplied in Projects/OSign. Do not report fork-specific issues upstream.")
+            }
 			NBSection(.localized("Credits")) {
 				ForEach(_credits, id: \.github) { credit in
 					_credit(name: credit.name, desc: credit.desc, github: credit.github)

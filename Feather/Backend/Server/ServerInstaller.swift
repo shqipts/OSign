@@ -21,6 +21,7 @@ class ServerInstaller: Identifiable, ObservableObject {
 	private var _needsShutdown = false
 	
 	var packageUrl: URL?
+    var externalManifestURL: URL?
 	var app: AppInfoPresentable
 	@ObservedObject var viewModel: InstallerStatusViewModel
 	private var _server: Application?
@@ -28,10 +29,14 @@ class ServerInstaller: Identifiable, ObservableObject {
 	init(app: AppInfoPresentable, viewModel: InstallerStatusViewModel) throws {
 		self.app = app
 		self.viewModel = viewModel
-		try _setup()
-		try _configureRoutes()
-		try _server?.server.start()
-		_needsShutdown = true
+        do {
+            try _setup()
+            try _configureRoutes()
+            try _server?.server.start()
+        } catch {
+            _shutdownServer()
+            throw error
+        }
 	}
 	
 	deinit {
@@ -39,7 +44,8 @@ class ServerInstaller: Identifiable, ObservableObject {
 	}
 	
 	private func _setup() throws {
-		self._server = try? setupApp(port: port)
+		self._server = try setupApp(port: port)
+        _needsShutdown = true
 	}
 		
 	private func _configureRoutes() throws {
@@ -102,10 +108,10 @@ class ServerInstaller: Identifiable, ObservableObject {
 	}
 		
 	func getServerMethod() -> Int {
-		UserDefaults.standard.integer(forKey: "Feather.serverMethod")
+		1 // OSign supports only Semi Local HTTP delivery on this device.
 	}
 	
 	func getIPFix() -> Bool {
-		UserDefaults.standard.bool(forKey: "Feather.ipFix")
+		true // Loopback is mandatory, never a LAN bind.
 	}
 }

@@ -97,7 +97,7 @@ struct SourcesAddView: View {
 						}
 					}
 				} footer: {
-					Text(.localized("Supports importing from KravaSign/MapleSign and ESign."))
+					Text("Import compatible third-party source lists.")
 				}
 				
 				if !_filteredRecommendedSourcesData.isEmpty {
@@ -119,7 +119,7 @@ struct SourcesAddView: View {
 							}
 						}
 					} footer: {
-						Text(.localized("Open an [issue](https://github.com/claration/Feather/issues) on GitHub if you want your source to be featured."))
+						Text("Choose a source you trust before importing applications.")
 					}
 				}
 			}

@@ -1,0 +1,25 @@
+[Unit]
+Description=OSign private temporary IPA install relay
+After=network-online.target tailscaled.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=osign-relay
+Group=osign-relay
+WorkingDirectory=/opt/osign-relay
+Environment=OSIGN_RELAY_STATE=/var/lib/osign-relay
+Environment=OSIGN_RELAY_TOKEN_FILE=/etc/osign-relay/upload-token
+Environment=OSIGN_RELAY_PUBLIC_BASE=https://ubuntu.tail4dcadb.ts.net:8443/osign
+ExecStart=/opt/osign-relay/.venv/bin/python /opt/osign-relay/relay.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/osign-relay
+
+[Install]
+WantedBy=multi-user.target

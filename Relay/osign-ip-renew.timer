@@ -1,0 +1,11 @@
+[Unit]
+Description=Check OSign IP certificate renewal four times daily
+
+[Timer]
+OnCalendar=*-*-* 00,06,12,18:00:00
+RandomizedDelaySec=300
+Persistent=true
+Unit=osign-ip-renew.service
+
+[Install]
+WantedBy=timers.target

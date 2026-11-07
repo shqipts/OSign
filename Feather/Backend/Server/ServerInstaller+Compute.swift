@@ -21,13 +21,9 @@ extension ServerInstaller {
 	}
 
 	var payloadEndpoint: URL {
-		var comps = URLComponents()
-		comps.scheme = self.getServerMethod() == 1 ? "http" : "https"
-		comps.host = sni()
-		comps.path = "/\(id).ipa"
-		comps.port = port
-		return comps.url!
-	}
+        // Port is generated in 4000...8000; no user-selected or LAN address is used.
+        LocalDelivery.payloadURL(id:id,port:port)!
+    }
 	
 	var pageEndpoint: URL {
 		var comps = URLComponents()
@@ -39,12 +35,8 @@ extension ServerInstaller {
 	}
 	
 	var externalServerLink: String {
-		let baseUrl = "https://api.palera.in/genPlist?bundleid=\(app.identifier!)&name=\(app.name!)&version=\(app.version!)&fetchurl=\(self.payloadEndpoint.absoluteString)"
-		let encodedBaseUrl = baseUrl.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed)!
-		let finalEncodedUrl = encodedBaseUrl.addingPercentEncoding(withAllowedCharacters: .alphanumerics)!
-		
-		return finalEncodedUrl
-	}
+        externalManifestURL?.absoluteString ?? ""
+    }
 
 	var iTunesLink: String {
 		_iTunesLink(with: plistEndpoint.absoluteString)
@@ -55,7 +47,8 @@ extension ServerInstaller {
 	}
 	
 	private func _iTunesLink(with url: String) -> String {
-		return "itms-services://?action=download-manifest&url=\(url)"
+        guard let manifest=URL(string:url), manifest.scheme == "https" else { return "" }
+        return InstallRequest.handoffURL(manifest).absoluteString
 	}
 
 	var displayImageSmallEndpoint: URL {
@@ -94,11 +87,8 @@ extension ServerInstaller {
 	}
 
 	var html: String {
-		"""
-		<html style="background-color: black;">
-		<script type="text/javascript">window.location="\(iTunesLinkExternal)"</script>
-		</html>
-		"""
+        guard let externalManifestURL else { return "<html><body>Manifest not ready. Return to OSign and retry.</body></html>" }
+        return LocalDelivery.installPage(for:externalManifestURL)
 	}
 
 	var installManifest: [String: Any] {[
